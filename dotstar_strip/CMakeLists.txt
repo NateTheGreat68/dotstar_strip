@@ -6,7 +6,7 @@ add_executable(dotstar_strip
         )
 
 # pull in common dependencies
-target_link_libraries(dotstar_strip pico_stdlib)
+target_link_libraries(dotstar_strip pico_stdlib hardware_spi)
 
 # enable usb output, disable uart output
 pico_enable_stdio_usb(dotstar_strip 1)
