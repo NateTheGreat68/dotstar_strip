@@ -33,6 +33,8 @@ void setup_relay();
 void relay_on();
 void relay_off();
 void setup_spi();
+void spi_write(char *data);
+void process_command(char *command);
 
 /*
  * Main loop.
@@ -55,11 +57,8 @@ int main() {
 		if (command_result == COMMAND_CHAR_END) { // End of this command.
 			// Null-terminate the string, perform action, restart the index.
 			command[command_index] = '\0';
-			printf("Command: %s\n", command);
+			process_command(command);
 			command_index = 0;
-			relay_off();
-			relay_on();
-			spi_write(command);
 		} else if (command_result != PICO_ERROR_TIMEOUT) { // Normal character.
 			// Append to the string and increment the index.
 			command[command_index] = (char)command_result;
@@ -110,7 +109,34 @@ void setup_spi() {
 	gpio_set_function(MOSI_PIN, GPIO_FUNC_SPI);
 }
 
-void spi_write(char *command) {
+void spi_write(char *data) {
 	// Send the data.
-	printf("Wrote %i bytes.\n", spi_write_blocking(SPI_NUMBER, command, strlen(command)));
+	spi_write_blocking(SPI_NUMBER, data, strlen(data));
+}
+
+void process_command(char *command) {
+	char color[COMMAND_LENGTH-3];
+
+	// Determine which command was sent.
+	if (strncmp(command, "on ", 3) == 0) { // "on" command
+		printf("Turning on relay.\n");
+		relay_on();
+		strcpy(color, command+3);
+		printf("Relay on; color %s.\n", color);
+	} else if (strncmp(command, "off", 3) == 0) { // "off" command
+		relay_off();
+		printf("Relay off.\n");
+	} else if (strncmp(command, "help", 4) == 0) { // "help" command
+		printf("Commands:\n");
+		printf("  on <color>\n");
+		printf("  off\n");
+		printf("  colors\n");
+	} else if (strncmp(command, "colors", 6) == 0) { // "colors" command
+		printf("Available colors:\n");
+		printf("  full\n  white\n  red\n  green\n  blue\n");
+		printf("  orange\n  purple\n  yellow\n");
+		printf("  custom: (<red>,<green>,<blue>) 0-255 each\n");
+	} else {
+		printf("Command not recognized; try \"help\"\n");
+	}
 }
