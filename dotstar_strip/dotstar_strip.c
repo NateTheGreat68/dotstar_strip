@@ -9,9 +9,10 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 
-#ifndef RGB_ORDER
-	#define RGB_ORDER BGR
+#ifndef SET_LED_ORDER
+#define LED_ORDER_BGR
 #endif
+
 /*
  * Constants.
  */
@@ -25,6 +26,17 @@
 const uint RELAY_PIN = 16; // GP16 is the pin used to control the main relay.
 const uint SCLK_PIN = 18; // GP18 is the SCLK SPI pin for the dotstar strip.
 const uint MOSI_PIN = 19; // GP19 is the MOSI SPI pin for the dotstar strip.
+const uint LED_COUNT = 67; // Number of LEDs for the on command.
+
+/*
+ * Structs.
+ */
+typedef struct LED_t {
+	char global;
+	char red;
+	char green;
+	char blue;
+} LED;
 
 /*
  * Function prototypes.
@@ -33,8 +45,9 @@ void setup_relay();
 void relay_on();
 void relay_off();
 void setup_spi();
-void spi_write(char *data);
+void spi_write(char *data, uint data_count);
 void process_command(char *command);
+void write_data(LED *data, uint data_count);
 
 /*
  * Main loop.
@@ -109,20 +122,41 @@ void setup_spi() {
 	gpio_set_function(MOSI_PIN, GPIO_FUNC_SPI);
 }
 
-void spi_write(char *data) {
+void spi_write(char *data, uint data_count) {
 	// Send the data.
-	spi_write_blocking(SPI_NUMBER, data, strlen(data));
+	spi_write_blocking(SPI_NUMBER, data, data_count);
 }
 
+/*
+ * Command processing and related functions.
+ */
 void process_command(char *command) {
 	char color[COMMAND_LENGTH-3];
+	uint led_count;
+	LED *led_data;
 
 	// Determine which command was sent.
 	if (strncmp(command, "on ", 3) == 0) { // "on" command
 		printf("Turning on relay.\n");
 		relay_on();
 		strcpy(color, command+3);
+		led_count = LED_COUNT;
+		led_data = (LED *)malloc(sizeof(LED)*led_count);
+
+		if (color[0] == '(' &&
+				color[strlen(color)-1] == ')') { // (RRR,GGG,BBB)
+			led_data[0].global = 31;
+			led_data[0].red = (char)strtoul(color+1, NULL, 10);
+			led_data[0].green = (char)strtoul(color+5, NULL, 10);
+			led_data[0].blue = (char)strtoul(color+9, NULL, 10);
+			for (int i=1; i<led_count; i++) {
+				led_data[i] = led_data[0];
+			}
+			write_data(led_data, led_count);
+		}
+
 		printf("Relay on; color %s.\n", color);
+		free(led_data);
 	} else if (strncmp(command, "off", 3) == 0) { // "off" command
 		relay_off();
 		printf("Relay off.\n");
@@ -135,8 +169,39 @@ void process_command(char *command) {
 		printf("Available colors:\n");
 		printf("  full\n  white\n  red\n  green\n  blue\n");
 		printf("  orange\n  purple\n  yellow\n");
-		printf("  custom: (<red>,<green>,<blue>) 0-255 each\n");
+		printf("  custom: (RRR,GGG,BBB) 000-255 each\n");
 	} else {
 		printf("Command not recognized; try \"help\"\n");
 	}
+}
+
+void write_data(LED *data, uint data_count) {
+	char buffer[4*data_count]; // each LED requires 4 bytes (4 chars)
+	uint half_count = (data_count >> 1) + 1;
+
+	// Start frame.
+	for (int i=0; i<4; i++) {
+		buffer[i] = 0;
+	}
+	spi_write(buffer, 4);
+	// Data frames.
+	for (int i=0; i<data_count; i++) {
+		parse_led(&data[i], &buffer[4*i]);
+	}
+	spi_write(buffer, data_count*4);
+	// End frame.
+	for (int i=0; i<half_count; i++) {
+		buffer[i] = 0;
+	}
+	spi_write(buffer, half_count);
+}
+
+void parse_led(LED *led_data, char *string_data) {
+	uint8_t prefix = 224;
+	string_data[0] = prefix | led_data->global;
+#ifdef LED_ORDER_BGR
+	string_data[1] = led_data->blue;
+	string_data[2] = led_data->green;
+	string_data[3] = led_data->red;
+#endif
 }
