@@ -37,6 +37,21 @@ typedef struct LED_t {
 	char green;
 	char blue;
 } LED;
+typedef struct COLOR_DEF_t {
+	char name[7];
+	LED led_data;
+} COLOR_DEF;
+
+COLOR_DEF color_defs[8] = {
+	{"blue", {31,0,0,255}},
+	{"full", {31,255,255,255}},
+	{"green", {31,0,255,0}},
+	{"orange", {31,255,100,0}},
+	{"purple", {31,200,0,255}},
+	{"red", {31,255,0,0}},
+	{"white", {31,255,240,240}},
+	{"yellow", {31,255,180,0}},
+};
 
 /*
  * Function prototypes.
@@ -48,6 +63,8 @@ void setup_spi();
 void spi_write(char *data, uint data_count);
 void process_command(char *command);
 void write_data(LED *data, uint data_count);
+static int compare_color_defs(const void *va, const void *vb);
+LED *get_color(char *name);
 
 /*
  * Main loop.
@@ -69,11 +86,13 @@ int main() {
 		command_result = getchar_timeout_us(COMMAND_TIMEOUT);
 		if (command_result == COMMAND_CHAR_END) { // End of this command.
 			// Null-terminate the string, perform action, restart the index.
+			printf("\n");
 			command[command_index] = '\0';
 			process_command(command);
 			command_index = 0;
 		} else if (command_result != PICO_ERROR_TIMEOUT) { // Normal character.
 			// Append to the string and increment the index.
+			printf("%c", (char) command_result);
 			command[command_index] = (char)command_result;
 			command_index++;
 		}
@@ -101,6 +120,7 @@ void relay_on() {
 	// Check the relay status. If it's already on, do nothing.
 	// Otherwise, turn it on and wait 3 seconds for it to stabilize.
 	if (!gpio_get(RELAY_PIN)) {
+		printf("Turning on relay.\n");
 		gpio_put(RELAY_PIN, 1);
 		sleep_ms(3e3);
 	}
@@ -134,29 +154,43 @@ void process_command(char *command) {
 	char color[COMMAND_LENGTH-3];
 	uint led_count;
 	LED *led_data;
+	LED *single_led;
 
 	// Determine which command was sent.
 	if (strncmp(command, "on ", 3) == 0) { // "on" command
-		printf("Turning on relay.\n");
 		relay_on();
 		strcpy(color, command+3);
 		led_count = LED_COUNT;
 		led_data = (LED *)malloc(sizeof(LED)*led_count);
+		single_led = (LED *)malloc(sizeof(LED));
 
 		if (color[0] == '(' &&
 				color[strlen(color)-1] == ')') { // (RRR,GGG,BBB)
-			led_data[0].global = 31;
-			led_data[0].red = (char)strtoul(color+1, NULL, 10);
-			led_data[0].green = (char)strtoul(color+5, NULL, 10);
-			led_data[0].blue = (char)strtoul(color+9, NULL, 10);
-			for (int i=1; i<led_count; i++) {
-				led_data[i] = led_data[0];
+			single_led->global = 31;
+			single_led->red = (char)strtoul(color+1, NULL, 10);
+			single_led->green = (char)strtoul(color+5, NULL, 10);
+			single_led->blue = (char)strtoul(color+9, NULL, 10);
+			for (int i=0; i<led_count; i++) {
+				led_data[i] = *single_led;
 			}
 			write_data(led_data, led_count);
+			printf("Relay on; color %s.\n", color);
+		} else {
+			single_led = get_color(color);
+			if (single_led) {
+				for (int i=0; i<led_count; i++) {
+					led_data[i] = *single_led;
+				}
+				write_data(led_data, led_count);
+				printf("Relay on; color %s.\n", color);
+			} else {
+				printf("Color %s not found.\n", color);
+			}
+			
 		}
 
-		printf("Relay on; color %s.\n", color);
 		free(led_data);
+		free(single_led);
 	} else if (strncmp(command, "off", 3) == 0) { // "off" command
 		relay_off();
 		printf("Relay off.\n");
@@ -204,4 +238,21 @@ void parse_led(LED *led_data, char *string_data) {
 	string_data[2] = led_data->green;
 	string_data[3] = led_data->red;
 #endif
+}
+
+static int compare_color_defs(const void *va, const void *vb) {
+	return strcmp(((COLOR_DEF *)va)->name, ((COLOR_DEF *)vb)->name);
+}
+
+LED *get_color(char *name) {
+	COLOR_DEF key[1];
+	strcpy(key[0].name, name);
+	COLOR_DEF *result = bsearch(key, color_defs,
+			sizeof(color_defs)/sizeof(color_defs[0]), sizeof(color_defs[0]),
+			compare_color_defs);
+	if (result) {
+		return &(result->led_data);
+	} else {
+		return NULL;
+	}
 }
