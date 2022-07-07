@@ -161,21 +161,23 @@ void process_command(char *command) {
 		relay_on();
 		strcpy(color, command+3);
 		led_count = LED_COUNT;
-		led_data = (LED *)malloc(sizeof(LED)*led_count);
-		single_led = (LED *)malloc(sizeof(LED));
 
 		if (color[0] == '(' &&
 				color[strlen(color)-1] == ')') { // (RRR,GGG,BBB)
+			led_data = (LED *)malloc(sizeof(LED)*led_count);
+			single_led = &(led_data[0]);
 			single_led->global = 31;
 			single_led->red = (char)strtoul(color+1, NULL, 10);
 			single_led->green = (char)strtoul(color+5, NULL, 10);
 			single_led->blue = (char)strtoul(color+9, NULL, 10);
-			for (int i=0; i<led_count; i++) {
+			for (int i=1; i<led_count; i++) {
 				led_data[i] = *single_led;
 			}
 			write_data(led_data, led_count);
 			printf("Relay on; color %s.\n", color);
+			free(led_data);
 		} else {
+			led_data = (LED *)malloc(sizeof(LED)*led_count);
 			single_led = get_color(color);
 			if (single_led) {
 				for (int i=0; i<led_count; i++) {
@@ -186,11 +188,9 @@ void process_command(char *command) {
 			} else {
 				printf("Color %s not found.\n", color);
 			}
-			
+			free(led_data);
 		}
 
-		free(led_data);
-		free(single_led);
 	} else if (strncmp(command, "off", 3) == 0) { // "off" command
 		relay_off();
 		printf("Relay off.\n");
